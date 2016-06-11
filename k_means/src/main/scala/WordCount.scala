@@ -43,18 +43,19 @@ object WordCount {
           pair
         })
         
-        val sortSet = dataSet.sortBy {
+        var currentSet = dataSet.sortBy {
           pair => (pair._1, pair._2.toString())
         }
         
         /* Below do clustering */
 
         val coreNum = 20
-        val core = sortSet.takeSample(false, coreNum, seed = 10L)
+        var core = currentSet.takeSample(false, coreNum)
         var current = 0
-        //while (current < 20) {
+        var last = Double.valueOf(0)
+        while (current < 20) {
           /* Step 1: assign each vector to most closed cluster */
-          var newData = sortSet.map(nodePair => {
+          val newData = currentSet.map(nodePair => {
             val node = nodePair._2 
 
             var currentIndex = 0
@@ -68,16 +69,32 @@ object WordCount {
             }
             node.setGroupID(currentIndex)
             node.setGroupDis(currentDis)
-            // currentDis
             (nodePair._1, node)
-          })// .reduce(_+_)
+          }).cache()
         
           var distance = newData.map(_._2.getGroupDis()).reduce(_+_)
+          print("[Distance " + String.valueOf(current)  + "] = " + String.valueOf(distance) + "\n")
+           
+          var newCore = newData.map(pair => {
+            var node = pair._2
+            node.setVecNum(1)
+            (node.getGroupID(), node)
+          }).reduceByKey(_+++_)
+          .map(pair => {
+            val updatedNode = pair._2
+            updatedNode.updateVector()
+            (pair._1, updatedNode)     
+          }).sortBy(_._1)
+          .map(pair => (String.valueOf(pair._1), pair._2)).toArray
+          
+          currentSet = newData
+          core = newCore
+          newData.unpersist()
+          
           current = current + 1
-          print("[Distance] = " + String.valueOf(distance))
-        //}
+        }
 
-        newData.saveAsTextFile(outputPath)
+        currentSet.saveAsTextFile(outputPath)
         sc.stop
     }
 }
@@ -112,6 +129,7 @@ class DataSet(date: String, price: Double, quantity: Double) extends Serializabl
   var priceSet = Map((date, price))
   var quantitySet = Map((date, quantity))
   var vector =  scala.collection.mutable.ArrayBuffer[Double]()
+  var vecNum = 0
   var groupID = 0
   var groupDis = Double.valueOf(0)
 
@@ -138,6 +156,29 @@ class DataSet(date: String, price: Double, quantity: Double) extends Serializabl
     this.priceSet = this.priceSet ++ that.priceSet
     this.quantitySet = this.quantitySet ++ that.quantitySet
     this
+  }
+  
+  def +++(that: DataSet): DataSet = {
+    for (i <- 0 to this.vector.size - 1) 
+      this.vector(i) = this.vector(i) + that.vector(i)
+    
+    /* GroupID here used to get number node of cluster */
+    this.vecNum = this.vecNum + that.vecNum
+    this
+  }
+  
+  def updateVector() = {
+    for (i <- 0 to this.vector.size - 1) {
+      this.vector(i) = this.vector(i) / this.vecNum
+    }
+  }
+  
+  def getVecNum(): Int = {
+    this.vecNum
+  }
+
+  def setVecNum(number: Int) = {
+    this.vecNum = number
   }
 
   def getDistance(that: DataSet): Double = {
