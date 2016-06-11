@@ -43,12 +43,41 @@ object WordCount {
           pair
         })
         
-         
-        val result = dataSet.sortBy {
+        val sortSet = dataSet.sortBy {
           pair => (pair._1, pair._2.toString())
         }
+        
+        /* Below do clustering */
 
-        result.saveAsTextFile(outputPath)
+        val coreNum = 20
+        val core = sortSet.takeSample(false, coreNum, seed = 10L)
+        var current = 0
+        //while (current < 20) {
+          /* Step 1: assign each vector to most closed cluster */
+          var newData = sortSet.map(nodePair => {
+            val node = nodePair._2 
+
+            var currentIndex = 0
+            var currentDis = node.getDistance(core(0)._2)
+            for (i <- 1 to coreNum - 1) {
+              var otherDis = node.getDistance(core(i)._2)
+              if (currentDis.compareTo(otherDis) > 0) {
+                currentIndex = i
+                currentDis = otherDis 
+              }
+            }
+            node.setGroupID(currentIndex)
+            node.setGroupDis(currentDis)
+            // currentDis
+            (nodePair._1, node)
+          })// .reduce(_+_)
+        
+          var distance = newData.map(_._2.getGroupDis()).reduce(_+_)
+          current = current + 1
+          print("[Distance] = " + String.valueOf(distance))
+        //}
+
+        newData.saveAsTextFile(outputPath)
         sc.stop
     }
 }
@@ -83,6 +112,8 @@ class DataSet(date: String, price: Double, quantity: Double) extends Serializabl
   var priceSet = Map((date, price))
   var quantitySet = Map((date, quantity))
   var vector =  scala.collection.mutable.ArrayBuffer[Double]()
+  var groupID = 0
+  var groupDis = Double.valueOf(0)
 
   override def toString(): String = {
     val sortPriceSet = priceSet.toSeq.sortBy(_._1)
@@ -99,21 +130,43 @@ class DataSet(date: String, price: Double, quantity: Double) extends Serializabl
 */   
     for (slope <- vector) 
       output = output + ", " + slope
+    output = output + ", GROUP = " + groupID
     output
   }
 
-  def ++(that :DataSet): DataSet = {
+  def ++(that: DataSet): DataSet = {
     this.priceSet = this.priceSet ++ that.priceSet
     this.quantitySet = this.quantitySet ++ that.quantitySet
     this
   }
 
+  def getDistance(that: DataSet): Double = {
+    var sum = new Double(0)
+    for (i <- 0 to this.vector.size - 1) {
+      val diff = this.vector(i) - that.vector(i)
+      sum = sum + diff * diff
+    }
+    sum
+  }
+  
+  def setGroupDis(distance: Double) = {
+    this.groupDis = distance
+  }
+  
+  def getGroupDis(): Double = {
+    this.groupDis
+  }
+
   def size(): Int = {
     this.priceSet.size
   }
+  
+  def getGroupID(): Int = {
+    this.groupID
+  }
 
-  def size2(): Int = {
-    this.quantitySet.size
+  def setGroupID(id: Int) = {
+    this.groupID = id
   }
 
   def setSlopeFunc() {
