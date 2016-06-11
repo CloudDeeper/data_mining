@@ -21,27 +21,6 @@ object WordCount {
         try { hdfs.delete(new Path(outputPath), true) } catch { case _ : Throwable => { } }
         
         val lines = sc.textFile(files)
-/*
-        val masterGraph = lines.flatMap(line =>{
-          val titleReg = "<title>(.+?)</title>"
-          val titleSplitReg = "<title>|</title>"
-          val m = Pattern.compile(titleReg).matcher(line)
-          val isFind = m.find()
-          val titleStr = m.group().split(titleSplitReg)
-        
-          titleStr.filter(_.length() != 0).map(word => {
-            val title = word.replaceAll("&quot;", "\"")
-                            .replaceAll("&gt;", ">")
-                            .replaceAll("&lt;", "<")
-                            .replaceAll("&amp;","&")
-                            .replaceAll("&apos;", "'")
-            
-            val nextNodes = new Page(List[String]())
-            nextNodes.setMaster()
-            (title, nextNodes)
-          })
-        }).cache
-*/
         val parser = lines.map(line => {
           val patterns = line.split(",")
           val key = patterns(2) + "," + patterns(0).substring(0, 6)
@@ -142,10 +121,29 @@ class DataSet(date: String, price: Double, quantity: Double) extends Serializabl
     val sortQuantitySet = quantitySet.toSeq.sortBy(_._1)
     var i = 0
     
+    val priceVec =  scala.collection.mutable.ArrayBuffer[Double]()
+    val quantityVec = scala.collection.mutable.ArrayBuffer[Double]() 
+     
     for (i <- 1 to sortPriceSet.size - 1)
-      vector.append(sortPriceSet(i)._2 - sortPriceSet(i - 1)._2)
+      priceVec.append(sortPriceSet(i)._2 - sortPriceSet(i - 1)._2)
     
     for (i <- 1 to sortQuantitySet.size - 1)
-      vector.append(sortQuantitySet(i)._2 - sortQuantitySet(i - 1)._2)
+      quantityVec.append(sortQuantitySet(i)._2 - sortQuantitySet(i - 1)._2)
+    
+    val maxPrice = priceVec.max
+    val minPrice = priceVec.min
+    val maxQuantity = quantityVec.max
+    val minQuantity = quantityVec.min
+    
+    val priceScalar = 2.0 / (maxPrice - minPrice)
+    val priceOffset = -1.0 - (minPrice * priceScalar)
+    val quantityScalar = 2.0 / (maxQuantity - minQuantity) 
+    val quantityOffset = -1.0 - (minQuantity * quantityScalar)
+
+    for (price <- priceVec) 
+      vector.append(price * priceScalar + priceOffset)
+    
+    for (q <- quantityVec)
+      vector.append(q * quantityScalar + quantityOffset)
   }
 }
